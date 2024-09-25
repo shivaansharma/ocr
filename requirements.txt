@@ -1,0 +1,7 @@
+pdf2image
+git+https://github.com/huggingface/transformers.git
+qwen-vl-utils
+#flash-attn
+byaldi
+qwen_vl_utils
+transformers
