@@ -5,3 +5,4 @@ qwen-vl-utils
 byaldi
 qwen_vl_utils
 transformers
+streamlit
