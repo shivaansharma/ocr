@@ -1,22 +1,28 @@
 import streamlit as st
 import base64
-from huggingface_hub import notebook_login
+from huggingface_hub import login
 from byaldi import RAGMultiModalModel
 from transformers import Qwen2VLForConditionalGeneration, AutoTokenizer, AutoProcessor
 from PIL import Image
 from io import BytesIO
 import torch
 import re
+apikey = "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"
+
+# Log in to Hugging Face Hub
+login(apikey)
 
 @st.cache_resource
 def load_models():
+   
     RAG = RAGMultiModalModel.from_pretrained("vidore/colpali", verbose=10)
     model = Qwen2VLForConditionalGeneration.from_pretrained(
         "Qwen/Qwen2-VL-2B-Instruct",
         torch_dtype=torch.float16,
         device_map="auto",
     )
-    processor = AutoProcessor.from_pretrained("Qwen/Qwen2-VL-2B-Instruct")
+    processor = AutoProcessor.from_pretrained( "Qwen/Qwen2-VL-2B-Instruct")
+ 
     return RAG, model, processor
 
 RAG, model, processor = load_models()
@@ -49,52 +55,65 @@ if uploaded_file is not None:
         if text_query:
             results = RAG.search(text_query, k=1, return_base64_results=True)
 
-            image_data = base64.b64decode(results[0].base64)
-            image = Image.open(BytesIO(image_data))
-            st.image(image, caption="Result Image", use_column_width=True)
+            if results:
+                image_data = base64.b64decode(results[0].base64)
+                image = Image.open(BytesIO(image_data))
+                st.image(image, caption="Result Image", use_column_width=True)
 
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image"},
-                        {"type": "text", "text": "extract text"}
-                    ]
-                }
-            ]
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "image": image},
+                            {"type": "text", "text": "extract text"}
+                        ]
+                    }
+                ]
 
-            text_prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
+                text_prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
 
-            inputs = processor(
-                text=[text_prompt],
-                images=[image],
-                padding=True,
-                return_tensors="pt"
-            )
+                inputs = processor(
+                    text=[text_prompt],
+                    images=[image],
+                    padding=True,
+                    return_tensors="pt"
+                )
 
-            inputs = inputs.to(model.device)
+                inputs = inputs.to(model.device)
 
-            with torch.no_grad():
-                output_ids = model.generate(**inputs, max_new_tokens=1024)
+                with torch.no_grad():
+                    output_ids = model.generate(**inputs, max_new_tokens=1024)
 
-            generated_ids = output_ids[:, inputs.input_ids.shape[1]:]
+                generated_ids = output_ids[:, inputs.input_ids.shape[1]:]
 
-            output_text = processor.batch_decode(
-                generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True
-            )[0]
+                output_text = processor.batch_decode(
+                    generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True
+                )[0]
 
-            # Highlight the queried text
-            def highlight_text(text, query):
-                highlighted_text = text
-                for word in query.split():
-                    pattern = re.compile(re.escape(word), re.IGNORECASE)
-                    highlighted_text = pattern.sub(lambda m: f'<span style="background-color: yellow;">{m.group()}</span>', highlighted_text)
-                return highlighted_text
+                # output_ids = model.generate(**inputs, max_new_tokens=1024)
 
-            highlighted_output = highlight_text(output_text, text_query)
+                # generated_ids = [
+                # output_ids[len(input_ids) :]
+                #                  for input_ids, output_ids in zip(inputs.input_ids, output_ids)
+                #                                 ]
 
-            st.subheader("Extracted Text (with query highlighted):")
-            st.markdown(highlighted_output, unsafe_allow_html=True)
+                # output_text = processor.batch_decode(
+                #      generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True
+                #         )
+                # Highlight the queried text
+                def highlight_text(text, query):
+                    highlighted_text = text
+                    for word in query.split():
+                        pattern = re.compile(re.escape(word), re.IGNORECASE)
+                        highlighted_text = pattern.sub(lambda m: f'<span style="background-color: yellow;">{m.group()}</span>', highlighted_text)
+                    return highlighted_text
+
+                highlighted_output = highlight_text(output_text, text_query)
+
+                st.subheader("Extracted Text (with query highlighted):")
+                st.markdown(highlighted_output, unsafe_allow_html=True)
+            else:
+                st.warning("No results found for the query.")
         else:
             st.warning("Please enter a query.")
 else:
